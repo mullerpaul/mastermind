@@ -30,6 +30,11 @@ BEGIN
   test_array(3).correct_black_count := 0;
   test_array(3).correct_white_count := 2;
 
+  test_array(4).solution := mastermind.combination(3, 1, 2, 4);
+  test_array(4).guess    := mastermind.combination(1, 1, 3, 1);
+  test_array(4).correct_black_count := 1;
+  test_array(4).correct_white_count := 1;
+
   FOR i IN test_array.FIRST .. test_array.LAST LOOP
     dbms_output.put_line('**** Test ' || to_char(i) || ' ****');
     dbms_output.put_line('solution: ' || mastermind.combination_to_string(test_array(i).solution));
@@ -63,7 +68,5 @@ BEGIN
 
 END;
 /
-
-
 
 
