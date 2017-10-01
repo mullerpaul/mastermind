@@ -58,6 +58,9 @@ AS
             /* Don't really need to track scored guesses at this point; but keeping this in for now.  Remove later if speed is an issue.   */
             la_scored_guess_pegs.EXTEND;
             la_scored_guess_pegs(la_scored_guess_pegs.LAST) := i;
+
+            /* Now exit the loop since we don't want to match any other solution pegs */
+            EXIT;
             
           END IF;  
         END LOOP;  
