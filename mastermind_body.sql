@@ -16,6 +16,35 @@ AS
   END combination_to_string;
   
   ----------------------------------------------------------
+  FUNCTION get_combination_by_id(fi_combo_id NUMBER)
+  RETURN combination
+  IS
+    lv_result combination;
+    lv_peg1   NUMBER;
+    lv_peg2   NUMBER;
+    lv_peg3   NUMBER;
+    lv_peg4   NUMBER;
+    
+  BEGIN
+
+    BEGIN
+      SELECT peg1, peg2, peg3, peg4
+        INTO lv_peg1, lv_peg2, lv_peg3, lv_peg4
+        FROM permutation_list
+       WHERE permutation_id = fi_combo_id;
+       
+      lv_result := combination(lv_peg1, lv_peg2, lv_peg3, lv_peg4);
+    EXCEPTION
+      WHEN NO_DATA_FOUND THEN
+        /* not 100% sure this is correct behavior in this case */
+        lv_result := combination();
+    END;
+
+    RETURN lv_result;
+
+  END get_combination_by_id;
+  
+  ----------------------------------------------------------
   PROCEDURE compute_score (pi_guess       IN combination,
                            pi_solution    IN combination,
                            po_white_count OUT NUMBER,
@@ -73,7 +102,64 @@ AS
 
   END compute_score;
 
+  ----------------------------------------------------------
+  PROCEDURE start_game (po_game_id OUT NUMBER) IS
+
+    /* Number of combinations (and max ID) for number of permutations.  We may 
+       want to make this dynamic so it works with different # of slots or colors. */
+    lc_number_of_combinations CONSTANT NUMBER := 1296;
+    
+    lv_game_id          NUMBER := game_seq.nextval;
+    lv_solution_perm_id NUMBER;
+    
+  BEGIN
+    /* pick secret code */
+    lv_solution_perm_id := trunc(dbms_random.VALUE(low => 1, HIGH => lc_number_of_combinations+1));
+ 
+    /* Initialize game */
+    INSERT INTO game (game_id, solution_permutation_id)
+    VALUES (lv_game_id, lv_solution_perm_id);
+    
+    po_game_id := lv_game_id;
+    
+    COMMIT;
+      
+  END start_game;
+  
+  ----------------------------------------------------------
+  PROCEDURE make_guess (pi_game_id IN NUMBER,
+                        pi_guess   IN combination) IS
+
+    lv_completed_flag   game.game_completed_flag%TYPE;
+    lv_soultion_perm_id game.solution_permutation_id%TYPE;
+    lv_move_id          game_moves.move_id%TYPE;
+    lv_black_score      NUMBER;
+    lv_white_score      NUMBER;
+    
+  BEGIN
+    BEGIN
+      SELECT solution_permutation_id, game_completed
+        INTO lv_soultion_perm_id, lv_completed_flag
+        FROM game
+       WHERE game_id = pi_game_id;
+    EXCEPTION
+      WHEN no_data_found THEN 
+        raise_application_error(-20001,'Not a valid game ID');
+    END;
+
+    IF lv_completed_flag <> 'N' THEN
+      raise_application_error(-20002,'That game is already completed');
+    END IF;
+
+    SELECT nvl(MAX(move_id),0) + 1 AS next_move_id
+      INTO lv_move_id
+      FROM game_moves 
+     WHERE game_id = pi_game_id;
+
+    NULL;
+    
+  END make_guess;
+
 END mastermind;
 /
-
 

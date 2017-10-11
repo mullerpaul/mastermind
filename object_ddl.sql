@@ -2,6 +2,7 @@ DROP TABLE game_moves;
 DROP TABLE game;
 DROP TABLE permutation_list;
 DROP TABLE peg_list;
+DROP SEQUENCE game_seq;
 
 CREATE TABLE peg_list
   (id    NUMBER       NOT NULL,
@@ -16,14 +17,16 @@ CREATE TABLE permutation_list
    CONSTRAINT permutation_list_pk PRIMARY KEY (permutation_id));
 
 CREATE TABLE game
-  (game_id                 NUMBER NOT NULL,
-   game_date               DATE  DEFAULT SYSDATE NOT NULL,
-   guesser_name            VARCHAR2(50),
-   scorer_name             VARCHAR2(50),
-   solution_permutation_id NUMBER,
+  (game_id                 NUMBER                  NOT NULL,
+   game_date               DATE  DEFAULT SYSDATE   NOT NULL,
+   solution_permutation_id NUMBER                  NOT NULL,
+   game_completed          VARCHAR2(1) DEFAULT 'N' NOT NULL,
    CONSTRAINT game_pk PRIMARY KEY (game_id),
    CONSTRAINT game_fk01 FOREIGN KEY (solution_permutation_id) 
-     REFERENCES permutation_list (permutation_id));
+     REFERENCES permutation_list (permutation_id),
+   CONSTRAINT game_ck01 CHECK (game_completed IN ('N','Y')));
+
+CREATE SEQUENCE game_seq;
 
 CREATE TABLE game_moves
   (game_id              NUMBER NOT NULL,

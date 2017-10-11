@@ -8,6 +8,11 @@ AS
                            pi_solution    IN  combination,
                            po_white_count OUT NUMBER,
                            po_black_count OUT NUMBER);
+                           
+  PROCEDURE start_game (po_game_id OUT NUMBER);
+  
+  PROCEDURE make_guess (pi_game_id IN NUMBER,
+                        pi_guess   IN combination);
 
 END mastermind;
 /
