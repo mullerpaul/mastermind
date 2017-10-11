@@ -16,6 +16,26 @@ AS
   END combination_to_string;
   
   ----------------------------------------------------------
+  FUNCTION get_permutation_id_by_combo (fi_combination combination)
+  RETURN NUMBER
+  IS
+    lv_result NUMBER;
+
+  BEGIN
+    SELECT permutation_id
+      INTO lv_result
+      FROM permutation_list
+     WHERE peg1 = fi_combination(1)
+       AND peg2 = fi_combination(2)
+       AND peg3 = fi_combination(3)
+       AND peg4 = fi_combination(4);
+       
+    RETURN lv_result;
+    /* too many rows should not happen as peg combos are unique. 
+       no data found should not happen unless we have invalid input. */
+  END;
+
+  ----------------------------------------------------------
   FUNCTION get_combination_by_id(fi_combo_id NUMBER)
   RETURN combination
   IS
@@ -132,13 +152,14 @@ AS
 
     lv_completed_flag   game.game_completed_flag%TYPE;
     lv_soultion_perm_id game.solution_permutation_id%TYPE;
+    lv_guess_perm_id    game_moves.guess_permutation_id%TYPE;
     lv_move_id          game_moves.move_id%TYPE;
     lv_black_score      NUMBER;
     lv_white_score      NUMBER;
     
   BEGIN
     BEGIN
-      SELECT solution_permutation_id, game_completed
+      SELECT solution_permutation_id, game_completed_flag
         INTO lv_soultion_perm_id, lv_completed_flag
         FROM game
        WHERE game_id = pi_game_id;
@@ -156,7 +177,19 @@ AS
       FROM game_moves 
      WHERE game_id = pi_game_id;
 
-    NULL;
+    lv_guess_perm_id := get_permutation_id_by_combo(pi_guess);
+    
+    compute_score (pi_guess       => pi_guess,
+                   pi_solution    => get_combination_by_id(lv_soultion_perm_id),
+                   po_white_count => lv_white_score,
+                   po_black_count => lv_black_score);
+                   
+    dbms_output.put_line('Guess: ' || combination_to_string(pi_guess) || '  Score: white ' || to_char(lv_white_score) || ' black ' || to_char(lv_black_score));
+    
+    INSERT INTO game_moves (game_id, move_id, guess_permutation_id, score_black, score_white)
+    VALUES (pi_game_id, lv_move_id, lv_guess_perm_id, lv_black_score, lv_white_score);
+    
+    COMMIT;
     
   END make_guess;
 

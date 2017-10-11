@@ -20,11 +20,11 @@ CREATE TABLE game
   (game_id                 NUMBER                  NOT NULL,
    game_date               DATE  DEFAULT SYSDATE   NOT NULL,
    solution_permutation_id NUMBER                  NOT NULL,
-   game_completed          VARCHAR2(1) DEFAULT 'N' NOT NULL,
+   game_completed_flag     VARCHAR2(1) DEFAULT 'N' NOT NULL,
    CONSTRAINT game_pk PRIMARY KEY (game_id),
    CONSTRAINT game_fk01 FOREIGN KEY (solution_permutation_id) 
      REFERENCES permutation_list (permutation_id),
-   CONSTRAINT game_ck01 CHECK (game_completed IN ('N','Y')));
+   CONSTRAINT game_ck01 CHECK (game_completed_flag IN ('N','Y')));
 
 CREATE SEQUENCE game_seq;
 
