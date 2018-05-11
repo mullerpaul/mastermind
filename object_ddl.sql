@@ -1,4 +1,6 @@
-DROP TABLE game_moves;
+DROP TABLE solver_guess_info;
+DROP TABLE guess_results;
+DROP TABLE game_move_record;
 DROP TABLE game;
 DROP TABLE permutation_list;
 DROP TABLE peg_list;
@@ -28,7 +30,7 @@ CREATE TABLE game
 
 CREATE SEQUENCE game_seq;
 
-CREATE TABLE game_moves
+CREATE TABLE game_move_record
   (game_id              NUMBER NOT NULL,
    move_id              NUMBER NOT NULL,
    guess_permutation_id NUMBER,
@@ -40,6 +42,16 @@ CREATE TABLE game_moves
    CONSTRAINT game_move_fk02 FOREIGN KEY (guess_permutation_id)
      REFERENCES permutation_list (permutation_id));
 
+CREATE TABLE solver_guess_info
+  (game_id                    NUMBER NOT NULL,
+   possible_solution_perm_id  NUMBER NOT NULL,
+   still_possible_solution    VARCHAR2(1) DEFAULT 'Y' NOT NULL,
+   eliminated_on_guess_id     NUMBER,
+     CONSTRAINT solver_game_info_ck01 CHECK
+       (still_possible_solution IN ('Y','N')),
+     CONSTRAINT solver_game_info_ck02 CHECK
+       ((still_possible_solution = 'Y' AND eliminated_on_guess_id IS NULL) OR
+         still_possible_solution = 'N' AND eliminated_on_guess_id IS NOT NULL));
 
 --- insert constant reference data
 INSERT INTO peg_list (id, color) VALUES (1, 'white');

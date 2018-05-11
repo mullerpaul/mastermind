@@ -39,7 +39,7 @@ AS
   FUNCTION get_combination_from_pegs(fi_peg1 IN NUMBER,
                                      fi_peg2 IN NUMBER,
                                      fi_peg3 IN NUMBER,
-                                     fi_peg4 in NUMBER)
+                                     fi_peg4 IN NUMBER)
   RETURN combination
   IS
   BEGIN
@@ -76,6 +76,41 @@ AS
   END get_combination_by_id;
   
   ----------------------------------------------------------
+  PROCEDURE print_game_history(pi_game_id        IN game.game_id%TYPE,
+                               pi_print_solution IN boolean DEFAULT FALSE)
+  IS
+    lv_game_rec GAME%rowtype;
+
+  BEGIN
+    SELECT *
+      INTO lv_game_rec
+      FROM game
+     WHERE game_id = pi_game_id;
+     
+    dbms_output.put_line('GAME: ' || to_char(lv_game_rec.game_id) ||
+                         ' Started on: ' || to_char(lv_game_rec.game_date, 'YYYY-Mon-DD hh24:mi') ||
+                         ' Completed: ' || lv_game_rec.game_completed_flag);
+
+    IF pi_print_solution
+    THEN 
+      dbms_output.put_line('Solution: ' || combination_to_string(get_combination_by_id(lv_game_rec.solution_permutation_id)));
+    END IF;
+    
+    FOR i IN (SELECT move_id, guess_permutation_id, score_black, score_white
+                FROM game_move_record
+               WHERE game_id = lv_game_rec.game_id
+               ORDER BY move_id) loop
+
+      dbms_output.put_line('  Move: ' || to_char(i.move_id) ||
+                           ' Guess: ' || combination_to_string(get_combination_by_id(i.guess_permutation_id)) ||
+                           ' White pegs: ' || to_char(i.score_white) ||
+                           ' Black pegs: ' || to_char(i.score_black));
+    END loop;
+    DBMS_output.put_line('');
+    
+  END print_game_history;
+  
+  ----------------------------------------------------------
   FUNCTION compute_score_sql(fi_guess_peg1    IN peg_list.ID%TYPE,
                              fi_guess_peg2    IN peg_list.ID%TYPE,
                              fi_guess_peg3    IN peg_list.ID%TYPE,
@@ -98,8 +133,8 @@ AS
                    po_black_count => lv_black_score);
 
     /* we want this to be callable from SQL; but that means it can only return one value.
-       We could write tow funtions - one to return white, and another to return black;
-       but first i want to try this trick to encode both scores in a single number.  */
+       We could write two funtions - one to return white, and another to return black;
+       but first i want to try this trick encoding both scores into a single number output.  */
     lv_result := (lv_black_score * 10) + lv_white_score;
     
     RETURN lv_result;
@@ -165,6 +200,25 @@ AS
   END compute_score;
 
   ----------------------------------------------------------
+  PROCEDURE compute_score (pi_guess       IN NUMBER,
+                           pi_solution    IN number,
+                           po_white_count OUT NUMBER,
+                           po_black_count OUT NUMBER) IS
+    lv_black NUMBER;
+    lv_white NUMBER;
+
+  BEGIN  
+    compute_score (pi_guess       => get_combination_by_id(compute_score.pi_guess),
+                   pi_solution    => get_combination_by_id(compute_score.pi_solution),
+                   po_white_count => compute_score.lv_white,
+                   po_black_count => compute_score.lv_black);
+
+    po_white_count := compute_score.lv_white;
+    po_black_count := compute_score.lv_black;
+
+  END compute_score;
+
+  ----------------------------------------------------------
   PROCEDURE start_game (po_game_id OUT NUMBER) IS
 
     /* Number of combinations (and max ID) for number of permutations.  We may 
@@ -181,91 +235,71 @@ AS
     /* Initialize game */
     INSERT INTO game (game_id, solution_permutation_id)
     VALUES (lv_game_id, lv_solution_perm_id);
-    
+
+    /* Initialize solver records */
+    INSERT INTO solver_guess_info (game_id, possible_solution_perm_id)
+    SELECT lv_game_id, permutation_id 
+      FROM permutation_list;
+
     po_game_id := lv_game_id;
-    
+
     COMMIT;
       
   END start_game;
   
   ----------------------------------------------------------
-  PROCEDURE player_guess (pi_game_id IN NUMBER,
-                          pi_guess   IN combination) IS
-
-    lv_completed_flag   game.game_completed_flag%TYPE;
-    lv_soultion_perm_id game.solution_permutation_id%TYPE;
-    lv_guess_perm_id    game_moves.guess_permutation_id%TYPE;
-    lv_move_id          game_moves.move_id%TYPE;
-    lv_black_score      NUMBER;
-    lv_white_score      NUMBER;
+  PROCEDURE make_guess (pi_game_id IN NUMBER) IS
     
+    lv_move_id          game_move_record.move_id%TYPE;
+    lv_solution_perm_id game.solution_permutation_id%TYPE;
+    lv_completed_game   game.game_completed_flag%TYPE;
+    lv_guess_combo      combination;
+    lv_guess_perm_id    game_move_record.guess_permutation_id%TYPE;
+    lv_white_score      game_move_record.score_white%TYPE;
+    lv_black_score      game_move_record.score_black%TYPE;
+
   BEGIN
-    BEGIN
-      SELECT solution_permutation_id, game_completed_flag
-        INTO lv_soultion_perm_id, lv_completed_flag
-        FROM game
-       WHERE game_id = pi_game_id;
-    EXCEPTION
-      WHEN no_data_found THEN 
-        raise_application_error(-20001,'Not a valid game ID');
-    END;
-
-    IF lv_completed_flag <> 'N' THEN
-      raise_application_error(-20002,'That game is already completed');
+    /* get solution perm ID.  Also check for complete games.  ToDo: add no_data_found handler. */
+    SELECT solution_permutation_id, game_completed_flag
+      INTO lv_solution_perm_id, lv_completed_game
+      FROM game
+     WHERE game_id = pi_game_id; 
+     
+    IF lv_completed_game = 'Y' 
+    THEN 
+      raise_application_error(-20001,'That game has been completed');
     END IF;
-
-    SELECT nvl(MAX(move_id),0) + 1 AS next_move_id
+    
+    /* figure out what turn it is */
+    SELECT nvl(MAX(move_id), 0) + 1
       INTO lv_move_id
-      FROM game_moves 
-     WHERE game_id = pi_game_id;
+      FROM game_move_record
+     WHERE game_id = pi_game_id; 
 
-    lv_guess_perm_id := get_permutation_id_by_combo(pi_guess);
+    IF lv_move_id = 1
+    THEN
+      /* first guess of game */
+      lv_guess_perm_id := get_permutation_id_by_combo(get_combination_from_pegs(1,1,2,2));  --use fixed initial guess
+      compute_score(pi_guess       => lv_guess_perm_id,
+                    pi_solution    => lv_solution_perm_id,
+                    po_white_count => lv_white_score, 
+                    po_black_count => lv_black_score);
+      
+    ELSE
+      /* second guess or later */
+      NULL;
+    END IF;
     
-    compute_score (pi_guess       => pi_guess,
-                   pi_solution    => get_combination_by_id(lv_soultion_perm_id),
-                   po_white_count => lv_white_score,
-                   po_black_count => lv_black_score);
-                   
-    dbms_output.put_line('Guess: ' || combination_to_string(pi_guess) || 
-                         '  Score: white ' || to_char(lv_white_score) || 
-                         ' black ' || to_char(lv_black_score));
-    
-    INSERT INTO game_moves (game_id, move_id, guess_permutation_id, score_black, score_white)
-    VALUES (pi_game_id, lv_move_id, lv_guess_perm_id, lv_black_score, lv_white_score);
-    
+    INSERT INTO game_move_record
+      (game_id, move_id, guess_permutation_id, score_black, score_white)
+    VALUES 
+      (pi_game_id, lv_move_id, lv_guess_perm_id, lv_black_score, lv_white_score);
+      
+    /* check for completed games - correct solution or too many turns */
+
     COMMIT;
-    
-  END player_guess;
 
-  ----------------------------------------------------------
-  PROCEDURE computer_guess (pi_game_id IN NUMBER) IS
-  
-    lv_completed_flag   game.game_completed_flag%TYPE;
-    lv_soultion_perm_id game.solution_permutation_id%TYPE;
-    lv_move_id          game_moves.move_id%TYPE;
-    
-  BEGIN
-    BEGIN
-      SELECT solution_permutation_id, game_completed_flag
-        INTO lv_soultion_perm_id, lv_completed_flag
-        FROM game
-       WHERE game_id = pi_game_id;
-    EXCEPTION
-      WHEN no_data_found THEN 
-        raise_application_error(-20001,'Not a valid game ID');
-    END;
-
-    IF lv_completed_flag <> 'N' THEN
-      raise_application_error(-20002,'That game is already completed');
-    END IF;
-
-    SELECT nvl(MAX(move_id),0) + 1 AS next_move_id
-      INTO lv_move_id
-      FROM game_moves 
-     WHERE game_id = pi_game_id;
-
-    
-  END computer_guess;  
+  END make_guess;
 
 END mastermind;
 /

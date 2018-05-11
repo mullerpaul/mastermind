@@ -1,4 +1,5 @@
 CREATE OR REPLACE PACKAGE mastermind
+AUTHID DEFINER
 AS
   TYPE combination IS VARRAY(4) OF integer;
 
@@ -18,12 +19,12 @@ AS
                              fi_solution_peg3 IN peg_list.ID%TYPE,
                              fi_solution_peg4 IN peg_list.ID%TYPE) RETURN NUMBER;
 
+  PROCEDURE print_game_history(pi_game_id        IN game.game_id%TYPE,
+                               pi_print_solution IN boolean DEFAULT FALSE);
+
   PROCEDURE start_game (po_game_id OUT NUMBER);
   
-  PROCEDURE player_guess (pi_game_id IN NUMBER,
-                          pi_guess   IN combination);
-
-  PROCEDURE computer_guess (pi_game_id IN NUMBER);
+  PROCEDURE make_guess (pi_game_id IN NUMBER);
 
 END mastermind;
 /
