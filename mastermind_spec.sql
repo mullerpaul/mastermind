@@ -10,17 +10,11 @@ AS
                            po_white_count OUT NUMBER,
                            po_black_count OUT NUMBER);
                            
-  FUNCTION compute_score_sql(fi_guess_peg1    IN peg_list.ID%TYPE,
-                             fi_guess_peg2    IN peg_list.ID%TYPE,
-                             fi_guess_peg3    IN peg_list.ID%TYPE,
-                             fi_guess_peg4    IN peg_list.ID%TYPE,
-                             fi_solution_peg1 IN peg_list.ID%TYPE,
-                             fi_solution_peg2 IN peg_list.ID%TYPE,
-                             fi_solution_peg3 IN peg_list.ID%TYPE,
-                             fi_solution_peg4 IN peg_list.ID%TYPE) RETURN NUMBER;
+  FUNCTION compute_score_sql(fi_guess_perm_id    IN permutation_list.permutation_id%TYPE,
+                             fi_solution_perm_id IN permutation_list.permutation_id%TYPE) RETURN NUMBER;
 
   PROCEDURE print_game_history(pi_game_id        IN game.game_id%TYPE,
-                               pi_print_solution IN boolean DEFAULT FALSE);
+                               pi_print_solution IN BOOLEAN DEFAULT FALSE);
 
   PROCEDURE start_game (po_game_id OUT NUMBER);
   

@@ -99,26 +99,20 @@ AS
     FOR i IN (SELECT move_id, guess_permutation_id, score_black, score_white
                 FROM game_move_record
                WHERE game_id = lv_game_rec.game_id
-               ORDER BY move_id) loop
+               ORDER BY move_id) LOOP
 
       dbms_output.put_line('  Move: ' || to_char(i.move_id) ||
                            ' Guess: ' || combination_to_string(get_combination_by_id(i.guess_permutation_id)) ||
-                           ' White pegs: ' || to_char(i.score_white) ||
-                           ' Black pegs: ' || to_char(i.score_black));
-    END loop;
-    DBMS_output.put_line('');
+                           ' Black pegs: ' || to_char(i.score_black) ||
+                           ' White pegs: ' || to_char(i.score_white));
+    END LOOP;
+    dbms_output.put_line('----');  --is there a better way to get a blank line??
     
   END print_game_history;
   
   ----------------------------------------------------------
-  FUNCTION compute_score_sql(fi_guess_peg1    IN peg_list.ID%TYPE,
-                             fi_guess_peg2    IN peg_list.ID%TYPE,
-                             fi_guess_peg3    IN peg_list.ID%TYPE,
-                             fi_guess_peg4    IN peg_list.ID%TYPE,
-                             fi_solution_peg1 IN peg_list.ID%TYPE,
-                             fi_solution_peg2 IN peg_list.ID%TYPE,
-                             fi_solution_peg3 IN peg_list.ID%TYPE,
-                             fi_solution_peg4 IN peg_list.ID%TYPE)
+  FUNCTION compute_score_sql(fi_guess_perm_id    IN permutation_list.permutation_id%TYPE,
+                             fi_solution_perm_id IN permutation_list.permutation_id%TYPE)
   RETURN NUMBER
   IS
     lv_result NUMBER;
@@ -127,8 +121,8 @@ AS
     
   BEGIN
 
-    compute_score (pi_guess => get_combination_from_pegs(fi_guess_peg1, fi_guess_peg2, fi_guess_peg3, fi_guess_peg4),
-                   pi_solution => get_combination_from_pegs(fi_solution_peg1, fi_solution_peg2, fi_solution_peg3, fi_solution_peg4),
+    compute_score (pi_guess       => get_combination_by_id(fi_guess_perm_id),
+                   pi_solution    => get_combination_by_id(fi_solution_perm_id),
                    po_white_count => lv_white_score,
                    po_black_count => lv_black_score);
 
@@ -219,6 +213,56 @@ AS
   END compute_score;
 
   ----------------------------------------------------------
+  PROCEDURE eliminate_elements_from_set(pi_game_id IN game_move_record.game_id%TYPE,
+                                        pi_move_id IN game_move_record.move_id%TYPE)
+  IS 
+    lv_prev_guess_perm_id game_move_record.guess_permutation_id%TYPE;
+    lv_prev_black_score   game_move_record.score_black%TYPE;
+    lv_prev_white_score   game_move_record.score_white%TYPE;
+    
+  BEGIN
+    SELECT guess_permutation_id, score_black, score_white
+      INTO lv_prev_guess_perm_id, lv_prev_black_score, lv_prev_white_score
+      FROM game_move_record
+     WHERE game_id = pi_game_id
+       AND move_id = (pi_move_id - 1);  --score for previous turn
+    
+    /* Secret codes which could not have resulted in the previous score given 
+       the previous guess are removed from the set of possible codes. */   
+    UPDATE solver_guess_info
+       SET still_possible_solution = 'N',
+           eliminated_on_guess_id = (pi_move_id - 1)
+     WHERE game_id = pi_game_id
+       AND still_possible_solution = 'Y'  -- only check ones not already eliminated
+       AND compute_score_sql(fi_guess_perm_id    => possible_solution_perm_id,
+                             fi_solution_perm_id => lv_prev_guess_perm_id) <> (lv_prev_black_score * 10) + lv_prev_white_score;
+       
+  END eliminate_elements_from_set;
+  
+  ----------------------------------------------------------
+  PROCEDURE choose_next_guess(pi_game_id       IN  game.game_id%TYPE,
+                              po_guess_perm_id OUT game_move_record.guess_permutation_id%TYPE) IS
+
+    lv_next_guess_perm_id solver_guess_info.possible_solution_perm_id%TYPE;
+
+  BEGIN
+    /* To minimize the number of guesses required to find the solution, we'd occasionally 
+       need to choose a solution which has already been ruled out.  I'm going to ignore 
+       that possibility for now and just focus on something simple to get things working. */
+
+    /* This query just picks the first possibility the query optimizer cares to return. */
+    SELECT possible_solution_perm_id
+      INTO lv_next_guess_perm_id
+      FROM solver_guess_info
+     WHERE game_id = pi_game_id
+       AND still_possible_solution = 'Y'
+       AND ROWNUM = 1;
+       
+    po_guess_perm_id := lv_next_guess_perm_id;
+
+  END choose_next_guess;
+
+  ----------------------------------------------------------
   PROCEDURE start_game (po_game_id OUT NUMBER) IS
 
     /* Number of combinations (and max ID) for number of permutations.  We may 
@@ -267,7 +311,7 @@ AS
      
     IF lv_completed_game = 'Y' 
     THEN 
-      raise_application_error(-20001,'That game has been completed');
+      raise_application_error(-20001, 'That game was already completed');
     END IF;
     
     /* figure out what turn it is */
@@ -287,7 +331,15 @@ AS
       
     ELSE
       /* second guess or later */
-      NULL;
+      eliminate_elements_from_set(pi_game_id => make_guess.pi_game_id,
+                                  pi_move_id => make_guess.lv_move_id);
+      choose_next_guess(pi_game_id       => make_guess.pi_game_id,
+                        po_guess_perm_id => make_guess.lv_guess_perm_id);
+      compute_score(pi_guess       => make_guess.lv_guess_perm_id,
+                    pi_solution    => make_guess.lv_solution_perm_id,
+                    po_white_count => make_guess.lv_white_score, 
+                    po_black_count => make_guess.lv_black_score);
+
     END IF;
     
     INSERT INTO game_move_record
@@ -296,6 +348,13 @@ AS
       (pi_game_id, lv_move_id, lv_guess_perm_id, lv_black_score, lv_white_score);
       
     /* check for completed games - correct solution or too many turns */
+    IF (lv_move_id = 10 OR lv_black_score = 4)
+    THEN
+      UPDATE game
+         SET game_completed_flag = 'Y'
+       WHERE game_id = pi_game_id;
+
+    END IF;  
 
     COMMIT;
 
